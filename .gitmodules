@@ -1,0 +1,3 @@
+[submodule "fcbkwrapper/src/core"]
+	path = fcbkwrapper/src/core
+	url = https://github.com/fcBK-maxflow/fcBK.git
