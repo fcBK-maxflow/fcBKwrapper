@@ -97,21 +97,82 @@ cdef public class GraphL[object PyObject_GraphL, type GraphL]:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    def init_final_redges(self, a, b, cap, r_cap):
-        """Initialize a list of residual edges (and their corresponding mirror) into the final data structure. The four arguments are a: the list of sources, b: the list of targets, cap: the list of residual capacities a -> b, and r_cap: the list of residual capacities b -> a. This function broadcasts the shapes to match and automatically finds the dimension of the data.
-        """
-        
-        # Broadcasted views, ensuring identical shape
-        a_b, b_b, cap_b, r_cap_b = np.broadcast_arrays(a, b, cap, r_cap)
-        a_b = a_b.reshape(-1)
-        b_b = b_b.reshape(-1)
-        cap_b = cap_b.reshape(-1)
-        r_cap_b = r_cap_b.reshape(-1)
+    def init_final_redges_1d(self, np.ndarray[uint32_t, ndim=1] a, np.ndarray[uint32_t, ndim=1] b, np.ndarray[int32_t, ndim=1] cap, np.ndarray[int32_t, ndim=1] r_cap):
 
         cdef Py_ssize_t i
-        for i in range(a_b.shape[0]):
-            self.init_final_redge(a_b[i], 4294967295, b_b[i], r_cap_b[i]==0, cap_b[i])
-            self.init_final_redge(b_b[i], 4294967295, a_b[i], cap_b[i]==0, r_cap_b[i])
+        for i in range(a.shape[0]):
+            self.init_final_redge(a[i], 4294967295, b[i], r_cap[i]==0, cap[i])
+            self.init_final_redge(b[i], 4294967295, a[i], cap[i]==0, r_cap[i])
+    
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def init_final_redges_2d(self, np.ndarray[uint32_t, ndim=2] a, np.ndarray[uint32_t, ndim=2] b, np.ndarray[int32_t, ndim=2] cap, np.ndarray[int32_t, ndim=2] r_cap):
+
+        cdef Py_ssize_t i, j
+        for i in range(a.shape[0]):
+            for j in range(a.shape[1]):
+                self.init_final_redge(a[i, j], 4294967295, b[i, j], r_cap[i, j]==0, cap[i, j])
+                self.init_final_redge(b[i, j], 4294967295, a[i, j], cap[i, j]==0, r_cap[i, j])
+    
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def init_final_redges_3d(self, np.ndarray[uint32_t, ndim=3] a, np.ndarray[uint32_t, ndim=3] b, np.ndarray[int32_t, ndim=3] cap, np.ndarray[int32_t, ndim=3] r_cap):
+
+        cdef Py_ssize_t i, j, k
+        for i in range(a.shape[0]):
+            for j in range(a.shape[1]):
+                for k in range(a.shape[2]):
+                    self.init_final_redge(a[i, j, k], 4294967295, b[i, j, k], r_cap[i, j, k]==0, cap[i, j, k])
+                    self.init_final_redge(b[i, j, k], 4294967295, a[i, j, k], cap[i, j, k]==0, r_cap[i, j, k])
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def init_final_redges(self, np.ndarray a, np.ndarray b, np.ndarray cap, np.ndarray r_cap):
+        """Initialize a list of residual edges (and their corresponding mirror) into the final data structure. The four arguments are a: the list of sources, b: the list of targets, cap: the list of residual capacities a -> b, and r_cap: the list of residual capacities b -> a. This function broadcasts the shapes to match and automatically finds the dimension of the data.
+        """
+
+        cdef:
+            uint32_t[:] av
+            uint32_t[:] bv
+            int32_t[:] capv
+            int32_t[:] r_capv
+            uint32_t* pa
+            uint32_t* pb
+            int32_t* pcap
+            int32_t* pr_cap
+            Py_ssize_t i, n
+        
+        # Broadcast to ensure same shape
+        a_b, b_b, cap_b, r_cap_b = np.broadcast_arrays(a, b, cap, r_cap)
+
+        # Much faster to use a function with dimension hardcoded!
+        if a_b.ndim == 1:
+            self.init_final_redges_1d(a_b, b_b, cap_b, r_cap_b)
+        elif a_b.ndim == 2:
+            self.init_final_redges_2d(a_b, b_b, cap_b, r_cap_b)
+        elif a_b.ndim == 3:
+            self.init_final_redges_3d(a_b, b_b, cap_b, r_cap_b)
+        else:
+            # Not quite as fast as hardcoded ndim, but decent.
+
+            # Get as contiguous 1D array
+            av = np.ascontiguousarray(a_b).reshape(-1)
+            bv = np.ascontiguousarray(b_b).reshape(-1)
+            capv = np.ascontiguousarray(cap_b).reshape(-1)
+            r_capv = np.ascontiguousarray(r_cap_b).reshape(-1)
+
+            n = av.shape[0]
+            if n == 0:
+                return
+            
+            pa = &av[0]
+            pb = &bv[0]
+            pcap = &capv[0]
+            pr_cap = &r_capv[0]
+
+            for i in range(n):
+                self.init_final_redge(pa[i], 4294967295, pb[i], pr_cap[i]==0, pcap[i])
+                self.init_final_redge(pb[i], 4294967295, pa[i], pcap[i]==0, pr_cap[i])
 
     def init_final_vertex(self, uint32_t i, int32_t tr_cap):
         """After running 'init_final_struct', this function initializes the information in a vertex of the final residual graph. The two arguments are i: the index of the vertex (in the interleaved list) and tr_cap: the terminal residual capacity (a signed 32-bit integer, where a positive value corresponds to an edge from s and a negative value corresponds to an edge to t).
@@ -230,21 +291,82 @@ cdef public class GraphXL[object PyObject_GraphXL, type GraphXL]:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    def init_final_redges(self, a, b, cap, r_cap):
-        """Initialize a list of residual edges (and their corresponding mirror) into the final data structure. The four arguments are a: the list of sources, b: the list of targets, cap: the list of residual capacities a -> b, and r_cap: the list of residual capacities b -> a. This function broadcasts the shapes to match and automatically finds the dimension of the data.
-        """
-        
-        # Broadcasted views, ensuring identical shape
-        a_b, b_b, cap_b, r_cap_b = np.broadcast_arrays(a, b, cap, r_cap)
-        a_b = a_b.reshape(-1)
-        b_b = b_b.reshape(-1)
-        cap_b = cap_b.reshape(-1)
-        r_cap_b = r_cap_b.reshape(-1)
+    def init_final_redges_1d(self, np.ndarray[uint64_t, ndim=1] a, np.ndarray[uint64_t, ndim=1] b, np.ndarray[int32_t, ndim=1] cap, np.ndarray[int32_t, ndim=1] r_cap):
 
         cdef Py_ssize_t i
-        for i in range(a_b.shape[0]):
-            self.init_final_redge(a_b[i], 4294967295, b_b[i], r_cap_b[i]==0, cap_b[i])
-            self.init_final_redge(b_b[i], 4294967295, a_b[i], cap_b[i]==0, r_cap_b[i])
+        for i in range(a.shape[0]):
+            self.init_final_redge(a[i], 4294967295, b[i], r_cap[i]==0, cap[i])
+            self.init_final_redge(b[i], 4294967295, a[i], cap[i]==0, r_cap[i])
+    
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def init_final_redges_2d(self, np.ndarray[uint64_t, ndim=2] a, np.ndarray[uint64_t, ndim=2] b, np.ndarray[int32_t, ndim=2] cap, np.ndarray[int32_t, ndim=2] r_cap):
+
+        cdef Py_ssize_t i, j
+        for i in range(a.shape[0]):
+            for j in range(a.shape[1]):
+                self.init_final_redge(a[i, j], 4294967295, b[i, j], r_cap[i, j]==0, cap[i, j])
+                self.init_final_redge(b[i, j], 4294967295, a[i, j], cap[i, j]==0, r_cap[i, j])
+    
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def init_final_redges_3d(self, np.ndarray[uint64_t, ndim=3] a, np.ndarray[uint64_t, ndim=3] b, np.ndarray[int32_t, ndim=3] cap, np.ndarray[int32_t, ndim=3] r_cap):
+
+        cdef Py_ssize_t i, j, k
+        for i in range(a.shape[0]):
+            for j in range(a.shape[1]):
+                for k in range(a.shape[2]):
+                    self.init_final_redge(a[i, j, k], 4294967295, b[i, j, k], r_cap[i, j, k]==0, cap[i, j, k])
+                    self.init_final_redge(b[i, j, k], 4294967295, a[i, j, k], cap[i, j, k]==0, r_cap[i, j, k])
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def init_final_redges(self, np.ndarray a, np.ndarray b, np.ndarray cap, np.ndarray r_cap):
+        """Initialize a list of residual edges (and their corresponding mirror) into the final data structure. The four arguments are a: the list of sources, b: the list of targets, cap: the list of residual capacities a -> b, and r_cap: the list of residual capacities b -> a. This function broadcasts the shapes to match and automatically finds the dimension of the data.
+        """
+
+        cdef:
+            uint64_t[:] av
+            uint64_t[:] bv
+            int32_t[:] capv
+            int32_t[:] r_capv
+            uint64_t* pa
+            uint64_t* pb
+            int32_t* pcap
+            int32_t* pr_cap
+            Py_ssize_t i, n
+        
+        # Broadcast to ensure same shape
+        a_b, b_b, cap_b, r_cap_b = np.broadcast_arrays(a, b, cap, r_cap)
+
+        # Much faster to use a function with dimension hardcoded!
+        if a_b.ndim == 1:
+            self.init_final_redges_1d(a_b, b_b, cap_b, r_cap_b)
+        elif a_b.ndim == 2:
+            self.init_final_redges_2d(a_b, b_b, cap_b, r_cap_b)
+        elif a_b.ndim == 3:
+            self.init_final_redges_3d(a_b, b_b, cap_b, r_cap_b)
+        else:
+            # Not quite as fast as hardcoded ndim, but decent.
+
+            # Get as contiguous 1D array
+            av = np.ascontiguousarray(a_b).reshape(-1)
+            bv = np.ascontiguousarray(b_b).reshape(-1)
+            capv = np.ascontiguousarray(cap_b).reshape(-1)
+            r_capv = np.ascontiguousarray(r_cap_b).reshape(-1)
+
+            n = av.shape[0]
+            if n == 0:
+                return
+            
+            pa = &av[0]
+            pb = &bv[0]
+            pcap = &capv[0]
+            pr_cap = &r_capv[0]
+
+            for i in range(n):
+                self.init_final_redge(pa[i], 4294967295, pb[i], pr_cap[i]==0, pcap[i])
+                self.init_final_redge(pb[i], 4294967295, pa[i], pcap[i]==0, pr_cap[i])
 
     def init_final_vertex(self, uint64_t i, int32_t tr_cap):
         """After running 'init_final_struct', this function initializes the information in a vertex of the final residual graph. The two arguments are i: the index of the vertex (in the interleaved list) and tr_cap: the terminal residual capacity (a signed 32-bit integer, where a positive value corresponds to an edge from s and a negative value corresponds to an edge to t).
